@@ -1,0 +1,37 @@
+[Unit]
+Description=Slack Paper Bot - Biology Paper Summarizer
+Documentation=https://github.com/your-username/slack-paper-bot
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/slack-paper-bot
+Environment="PATH=/home/ubuntu/slack-paper-bot/.venv/bin"
+
+# Use uv to run the application
+ExecStart=/home/ubuntu/slack-paper-bot/.venv/bin/python main.py
+
+# Restart configuration
+Restart=always
+RestartSec=10
+
+# Security hardening
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/ubuntu/slack-paper-bot/logs /home/ubuntu/slack-paper-bot/cache
+
+# Resource limits
+MemoryMax=1G
+CPUQuota=100%
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=slack-paper-bot
+
+[Install]
+WantedBy=multi-user.target

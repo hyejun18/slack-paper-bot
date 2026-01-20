@@ -1,0 +1,82 @@
+# Slack Paper Bot Configuration
+# Copy this file to config.yml and fill in your values
+
+# Slack Configuration
+slack:
+  # Bot User OAuth Token (starts with xoxb-)
+  # Get from: https://api.slack.com/apps > Your App > OAuth & Permissions
+  bot_token: "xoxb-your-bot-token-here"
+
+  # Signing Secret for request verification
+  # Get from: https://api.slack.com/apps > Your App > Basic Information > App Credentials
+  signing_secret: "your-signing-secret-here"
+
+  # Channel IDs to monitor (can be multiple)
+  # Get channel ID: Right-click channel > View channel details > scroll to bottom
+  channel_ids:
+    - "C0123456789"
+
+  # Optional: Bot user ID (auto-detected if not set)
+  # bot_user_id: "U0123456789"
+
+# Google Gemini API Configuration
+gemini:
+  # API Key from Google AI Studio
+  # Get from: https://aistudio.google.com/app/apikey
+  api_key: "your-gemini-api-key-here"
+
+  # Model to use
+  model: "gemini-2.0-flash"
+
+# Server Configuration
+server:
+  # Host to bind (0.0.0.0 for all interfaces)
+  host: "0.0.0.0"
+
+  # Port to listen on
+  port: 8000
+
+  # SSL/TLS Configuration
+  ssl:
+    enabled: true
+    cert_file: "certs/cert.pem"
+    key_file: "certs/key.pem"
+
+# Logging Configuration
+logging:
+  # Log level: DEBUG, INFO, WARNING, ERROR
+  level: "INFO"
+
+  # Log to file (optional, leave empty for stdout only)
+  file: "logs/bot.log"
+
+  # Max log file size in MB before rotation
+  max_size_mb: 10
+
+  # Number of backup files to keep
+  backup_count: 5
+
+# Summary Configuration
+summary:
+  # Maximum pages to process from PDF (0 = no limit)
+  max_pages: 50
+
+  # Summary detail level: short, normal, detailed
+  detail_level: "normal"
+
+  # Cache summaries to avoid re-processing same papers
+  enable_cache: true
+
+  # Cache directory
+  cache_dir: "cache"
+
+# Advanced Settings (optional)
+advanced:
+  # Request timeout in seconds
+  timeout: 120
+
+  # Number of retries for API calls
+  max_retries: 3
+
+  # Delay between retries in seconds
+  retry_delay: 2
