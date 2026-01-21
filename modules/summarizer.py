@@ -57,8 +57,7 @@ CRITICAL RULES:
 
 OUTPUT FORMAT:
 
-:bar_chart: *논문 분석 결과*
-*[Original paper title in English]*
+:books: *[Original paper title in English]*
 
 :bulb: *한줄 핵심 (The Hook)*
 [One impactful sentence summarizing the key finding/contribution with specific numbers or achievements]
