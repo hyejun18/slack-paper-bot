@@ -5,7 +5,6 @@ This bot monitors Slack channels for PDF uploads and automatically
 summarizes biology papers in Korean using Google Gemini API.
 """
 
-import asyncio
 import logging
 import sys
 from concurrent.futures import ThreadPoolExecutor
@@ -214,122 +213,85 @@ def process_pdf_sync(
             pass
 
 
-async def process_pdf_async(
-    channel: str,
-    thread_ts: str,
-    pdf_url: str,
-    filename: str,
-    status_ts: str | None,
-) -> None:
-    """Async wrapper for PDF processing."""
-    loop = asyncio.get_event_loop()
-    await loop.run_in_executor(
-        executor,
-        process_pdf_sync,
-        channel,
-        thread_ts,
-        pdf_url,
-        filename,
-        status_ts,
-    )
+
+def handle_file_shared_event(event: dict, client=None) -> None:
+    """
+    Common handler for file_shared events (used by both HTTP and Socket Mode).
+
+    Args:
+        event: Slack file_shared event payload
+        client: Slack WebClient (uses global slack_handler.client if None)
+    """
+    file_id = event.get("file_id")
+    channel = event.get("channel_id")
+
+    if channel not in slack_handler.channel_ids:
+        logger.debug(f"Ignoring file from channel: {channel}")
+        return
+
+    if file_id in slack_handler._processed_events:
+        logger.debug(f"Duplicate file_shared event: {file_id}")
+        return
+    slack_handler._processed_events.add(file_id)
+
+    slack_client = client or slack_handler.client
+    try:
+        file_info = slack_client.files_info(file=file_id)
+        file_data = file_info.get("file", {})
+
+        if file_data.get("filetype") == "pdf" or file_data.get("name", "").lower().endswith(".pdf"):
+            filename = file_data.get("name", "unknown.pdf")
+            pdf_url = file_data.get("url_private")
+
+            shares = file_data.get("shares", {})
+            channel_shares = shares.get("public", {}).get(channel) or shares.get("private", {}).get(channel)
+            thread_ts = channel_shares[0].get("ts") if channel_shares else event.get("event_ts")
+
+            logger.info(f"Found PDF via file_shared: {filename}")
+
+            slack_handler.add_reaction(channel, thread_ts, "party_blob")
+
+            status_ts = slack_handler.post_processing_status(
+                channel=channel,
+                thread_ts=thread_ts,
+                filename=filename,
+            )
+
+            executor.submit(process_pdf_sync, channel, thread_ts, pdf_url, filename, status_ts)
+            logger.info(f"Queued PDF for processing: {filename}")
+    except Exception as e:
+        logger.error(f"Failed to get file info: {e}")
 
 
 @app.post("/slack/events")
 async def slack_events(request: Request, background_tasks: BackgroundTasks):
-    """
-    Handle Slack Event API webhooks.
-
-    This endpoint receives all events from Slack and processes PDF uploads.
-    """
-    # Get request data
+    """Handle Slack Event API webhooks (HTTP mode only)."""
     body = await request.body()
     timestamp = request.headers.get("X-Slack-Request-Timestamp", "")
     signature = request.headers.get("X-Slack-Signature", "")
 
-    # Verify request
     if not slack_handler.verify_request(timestamp, body, signature):
         logger.warning("Invalid Slack request signature")
         raise HTTPException(status_code=401, detail="Invalid signature")
 
-    # Parse JSON
     try:
         data = await request.json()
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON")
 
-    # Handle URL verification challenge
     if data.get("type") == "url_verification":
         logger.info("Handling URL verification challenge")
         return {"challenge": data.get("challenge")}
 
-    # Handle events
     if data.get("type") == "event_callback":
         event = data.get("event", {})
         event_type = event.get("type")
-
         logger.debug(f"Received event: {event_type}, data: {event}")
 
-        # Handle file_shared event
         if event_type == "file_shared":
-            file_id = event.get("file_id")
-            channel = event.get("channel_id")
-
-            if channel not in slack_handler.channel_ids:
-                logger.debug(f"Ignoring file from channel: {channel}")
-                return Response(status_code=200)
-
-            # Check for duplicate file_shared events
-            if file_id in slack_handler._processed_events:
-                logger.debug(f"Duplicate file_shared event: {file_id}")
-                return Response(status_code=200)
-            slack_handler._processed_events.add(file_id)
-
-            # Get file info from Slack API
-            try:
-                file_info = slack_handler.client.files_info(file=file_id)
-                file_data = file_info.get("file", {})
-
-                if file_data.get("filetype") == "pdf" or file_data.get("name", "").lower().endswith(".pdf"):
-                    filename = file_data.get("name", "unknown.pdf")
-                    pdf_url = file_data.get("url_private")
-
-                    # Get the message timestamp for thread reply
-                    shares = file_data.get("shares", {})
-                    # Try public channels first, then private
-                    channel_shares = shares.get("public", {}).get(channel) or shares.get("private", {}).get(channel)
-                    thread_ts = channel_shares[0].get("ts") if channel_shares else event.get("event_ts")
-
-                    logger.info(f"Found PDF via file_shared: {filename}")
-
-                    # Add reaction to the original message
-                    slack_handler.add_reaction(channel, thread_ts, "party_blob")
-
-                    # Post processing status
-                    status_ts = slack_handler.post_processing_status(
-                        channel=channel,
-                        thread_ts=thread_ts,
-                        filename=filename,
-                    )
-
-                    # Process PDF in background
-                    background_tasks.add_task(
-                        process_pdf_async,
-                        channel,
-                        thread_ts,
-                        pdf_url,
-                        filename,
-                        status_ts,
-                    )
-
-                    logger.info(f"Queued PDF for processing: {filename}")
-            except Exception as e:
-                logger.error(f"Failed to get file info: {e}")
-
+            background_tasks.add_task(handle_file_shared_event, event)
             return Response(status_code=200)
 
-        # Note: message events with files are handled via file_shared event above
-
-    # Always respond quickly to Slack
     return Response(status_code=200)
 
 
@@ -356,19 +318,23 @@ async def root():
     }
 
 
-def main():
-    """Run the application."""
-    global config
-    config = get_config()
+def _run_socket_mode() -> None:
+    """Start the bot in Socket Mode (no public IP required)."""
+    from slack_bolt import App as BoltApp
+    from slack_bolt.adapter.socket_mode import SocketModeHandler
 
-    # Validate early
-    errors = config.validate()
-    if errors:
-        for error in errors:
-            print(f"Configuration error: {error}", file=sys.stderr)
-        sys.exit(1)
+    bolt = BoltApp(token=config.slack_bot_token, signing_secret=config.slack_signing_secret)
 
-    # SSL configuration
+    @bolt.event("file_shared")
+    def on_file_shared(event, client):
+        handle_file_shared_event(event, client)
+
+    logger.info("Starting in Socket Mode (no public IP required)")
+    SocketModeHandler(bolt, config.slack_app_token).start()
+
+
+def _run_http_mode() -> None:
+    """Start the bot as an HTTP server (requires public IP/SSL)."""
     ssl_config = {}
     if config.ssl_enabled:
         ssl_config = {
@@ -377,7 +343,7 @@ def main():
         }
         print(f"SSL enabled with cert: {config.ssl_cert_file}")
 
-    print(f"Starting server on {config.server_host}:{config.server_port}")
+    print(f"Starting HTTP server on {config.server_host}:{config.server_port}")
 
     uvicorn.run(
         "main:app",
@@ -387,6 +353,27 @@ def main():
         log_level="info",
         **ssl_config,
     )
+
+
+def main():
+    """Run the application."""
+    global config
+    config = get_config()
+
+    errors = config.validate()
+    if errors:
+        for error in errors:
+            print(f"Configuration error: {error}", file=sys.stderr)
+        sys.exit(1)
+
+    if config.slack_mode == "socket":
+        # Socket Mode: initialize everything here (no FastAPI lifespan)
+        setup_logging()
+        initialize_components()
+        _run_socket_mode()
+    else:
+        # HTTP Mode: FastAPI lifespan handles setup_logging + initialize_components
+        _run_http_mode()
 
 
 if __name__ == "__main__":

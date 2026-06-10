@@ -3,6 +3,9 @@
 
 # Slack Configuration
 slack:
+  # Connection mode: "socket" (no public IP needed) or "http" (webhook, requires public IP/SSL)
+  mode: "socket"
+
   # Bot User OAuth Token (starts with xoxb-)
   # Get from: https://api.slack.com/apps > Your App > OAuth & Permissions
   bot_token: "xoxb-your-bot-token-here"
@@ -10,6 +13,12 @@ slack:
   # Signing Secret for request verification
   # Get from: https://api.slack.com/apps > Your App > Basic Information > App Credentials
   signing_secret: "your-signing-secret-here"
+
+  # App-Level Token for Socket Mode (starts with xapp-)
+  # Required only when mode is "socket"
+  # Get from: https://api.slack.com/apps > Your App > Basic Information > App-Level Tokens
+  # Required scope: connections:write
+  app_token: "xapp-your-app-token-here"
 
   # Channel IDs to monitor (can be multiple)
   # Get channel ID: Right-click channel > View channel details > scroll to bottom

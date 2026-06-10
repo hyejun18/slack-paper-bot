@@ -34,6 +34,7 @@ class Config:
         env_mappings = {
             "SLACK_BOT_TOKEN": ("slack", "bot_token"),
             "SLACK_SIGNING_SECRET": ("slack", "signing_secret"),
+            "SLACK_APP_TOKEN": ("slack", "app_token"),
             "GEMINI_API_KEY": ("gemini", "api_key"),
             "SERVER_PORT": ("server", "port"),
         }
@@ -67,12 +68,20 @@ class Config:
 
     # Slack settings
     @property
+    def slack_mode(self) -> str:
+        return self._get_nested(("slack", "mode"), "http")
+
+    @property
     def slack_bot_token(self) -> str:
         return self._get_nested(("slack", "bot_token"), "")
 
     @property
     def slack_signing_secret(self) -> str:
         return self._get_nested(("slack", "signing_secret"), "")
+
+    @property
+    def slack_app_token(self) -> str:
+        return self._get_nested(("slack", "app_token"), "")
 
     @property
     def slack_channel_ids(self) -> list[str]:
@@ -163,6 +172,9 @@ class Config:
         """Validate required configuration values."""
         errors = []
 
+        if self.slack_mode not in ("http", "socket"):
+            errors.append("slack.mode must be 'http' or 'socket'")
+
         if not self.slack_bot_token:
             errors.append("slack.bot_token is required")
         elif not self.slack_bot_token.startswith("xoxb-"):
@@ -171,13 +183,19 @@ class Config:
         if not self.slack_signing_secret:
             errors.append("slack.signing_secret is required")
 
+        if self.slack_mode == "socket":
+            if not self.slack_app_token:
+                errors.append("slack.app_token is required for socket mode")
+            elif not self.slack_app_token.startswith("xapp-"):
+                errors.append("slack.app_token should start with 'xapp-'")
+
         if not self.slack_channel_ids:
             errors.append("slack.channel_ids must have at least one channel")
 
         if not self.gemini_api_key:
             errors.append("gemini.api_key is required")
 
-        if self.ssl_enabled:
+        if self.slack_mode == "http" and self.ssl_enabled:
             cert_path = Path(self.ssl_cert_file)
             key_path = Path(self.ssl_key_file)
             if not cert_path.exists():
